@@ -3,21 +3,30 @@ package com.sam_chordas.android.stockhawk.service;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.OperationApplicationException;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.os.RemoteException;
+import android.preference.PreferenceManager;
+import android.support.annotation.IntDef;
 import android.util.Log;
 import com.google.android.gms.gcm.GcmNetworkManager;
 import com.google.android.gms.gcm.GcmTaskService;
 import com.google.android.gms.gcm.TaskParams;
+import com.sam_chordas.android.stockhawk.R;
 import com.sam_chordas.android.stockhawk.data.QuoteColumns;
 import com.sam_chordas.android.stockhawk.data.QuoteProvider;
 import com.sam_chordas.android.stockhawk.rest.Utils;
 import com.squareup.okhttp.OkHttpClient;
 import com.squareup.okhttp.Request;
 import com.squareup.okhttp.Response;
+
+import org.json.JSONException;
+
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.net.URLEncoder;
 
 /**
@@ -32,6 +41,16 @@ public class StockTaskService extends GcmTaskService{
   private Context mContext;
   private StringBuilder mStoredSymbols = new StringBuilder();
   private boolean isUpdate;
+
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({STATUS_SERVER_OK, STATUS_SERVER_DOWN, STATUS_SERVER_INVALID, STATUS_SERVER_UNKNOWN, STATUS_SERVER_REMOTE_EXCEPTION})
+  public @interface ServerStatus{}
+
+  public static final int STATUS_SERVER_OK = 0;
+  public static final int STATUS_SERVER_DOWN = 1;
+  public static final int STATUS_SERVER_INVALID = 2;
+  public static final int STATUS_SERVER_UNKNOWN = 3;
+  public static final int STATUS_SERVER_REMOTE_EXCEPTION = 4;
 
   public StockTaskService(){}
 
@@ -123,15 +142,30 @@ public class StockTaskService extends GcmTaskService{
           }
           mContext.getContentResolver().applyBatch(QuoteProvider.AUTHORITY,
               Utils.quoteJsonToContentVals(getResponse));
-        }catch (RemoteException | OperationApplicationException e){
+          setServerStatus(mContext, STATUS_SERVER_OK);
+
+        }catch(JSONException e)
+        {
+          setServerStatus(mContext, STATUS_SERVER_INVALID);
+        }
+        catch (RemoteException | OperationApplicationException e) {
           Log.e(LOG_TAG, "Error applying batch insert", e);
+          setServerStatus(mContext, STATUS_SERVER_REMOTE_EXCEPTION);
         }
       } catch (IOException e){
         e.printStackTrace();
+        setServerStatus(mContext, STATUS_SERVER_DOWN);
       }
     }
 
     return result;
   }
 
+ /* sets the server status in the preference string */
+ static private void setServerStatus(Context c, @ServerStatus int serverStatus){
+    SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(c);
+    SharedPreferences.Editor spe= sp.edit();
+    spe.putInt(c.getString(R.string.pref_server_status_key), serverStatus);
+    spe.commit();
+  }
 }

@@ -10,6 +10,7 @@
     >
     <TextView
         android:id="@+id/stock_symbol"
+        android:contentDescription="@string/stock_symbol_desc"
         style="@style/StockSymbolTextStyle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -25,6 +26,7 @@
         <TextView
             android:id="@+id/bid_price"
             style="@style/BidPriceTextStyle"
+            android:contentDescription="@string/bid_price_desc"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:paddingRight="10sp"
@@ -32,6 +34,7 @@
             />
         <TextView
             android:id="@+id/change"
+            android:contentDescription="@string/change_desc"
             android:background="@drawable/percent_change_pill"
             style="@style/PercentChangeTextStyle"
             android:layout_width="wrap_content"

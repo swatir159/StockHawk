@@ -5,9 +5,11 @@ import android.content.Context;
 import android.content.CursorLoader;
 import android.content.Intent;
 import android.content.Loader;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.preference.PreferenceManager;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.app.ActionBar;
 import android.os.Bundle;
@@ -19,6 +21,7 @@ import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.sam_chordas.android.stockhawk.R;
@@ -35,7 +38,7 @@ import com.google.android.gms.gcm.Task;
 import com.melnykov.fab.FloatingActionButton;
 import com.sam_chordas.android.stockhawk.touch_helper.SimpleItemTouchHelperCallback;
 
-public class MyStocksActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor>{
+public class MyStocksActivity extends AppCompatActivity implements SharedPreferences.OnSharedPreferenceChangeListener,  LoaderManager.LoaderCallbacks<Cursor>{
 
   /**
    * Fragment managing the behaviors, interactions and presentation of the navigation drawer.
@@ -48,11 +51,12 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
   private Intent mServiceIntent;
   private ItemTouchHelper mItemTouchHelper;
   private static final int CURSOR_LOADER_ID = 0;
+  private static final int QuoteColumns_SYMBOL = 1;
   private QuoteCursorAdapter mCursorAdapter;
   private Context mContext;
   private Cursor mCursor;
   boolean isConnected;
-
+  private TextView mEmptyView;
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -77,6 +81,8 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
       }
     }
     RecyclerView recyclerView = (RecyclerView) findViewById(R.id.recycler_view);
+    mEmptyView =  (TextView) findViewById(R.id.recycler_view_empty);
+
     recyclerView.setLayoutManager(new LinearLayoutManager(this));
     getLoaderManager().initLoader(CURSOR_LOADER_ID, null, this);
 
@@ -86,9 +92,22 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
               @Override public void onItemClick(View v, int position) {
                 //TODO:
                 // do something on item click
+                String stock_name = "";
+                if (mCursor != null && mCursor.getCount()>= position){
+                  mCursor.moveToPosition(position);
+                  stock_name = mCursor.getString(QuoteColumns_SYMBOL);
+                }
+                String message = " item clicked " + position + "stock name = " + stock_name;
+                Toast toast =
+                        Toast.makeText(MyStocksActivity.this, message,
+                                Toast.LENGTH_LONG);
+                toast.setGravity(Gravity.CENTER, Gravity.CENTER, 0);
+                toast.show();
               }
             }));
+
     recyclerView.setAdapter(mCursorAdapter);
+    ShowEmptyViewIfAdapterEmpty(mEmptyView);
 
 
     FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
@@ -108,13 +127,18 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
                       new String[] { input.toString() }, null);
                   if (c.getCount() != 0) {
                     Toast toast =
-                        Toast.makeText(MyStocksActivity.this, "This stock is already saved!",
+                        Toast.makeText(MyStocksActivity.this, getString(R.string.add_stock_toast_1),
                             Toast.LENGTH_LONG);
                     toast.setGravity(Gravity.CENTER, Gravity.CENTER, 0);
                     toast.show();
                     return;
                   } else {
                     // Add the stock to DB
+                    Toast toast =
+                            Toast.makeText(MyStocksActivity.this, getString(R.string.add_stock_toast_2),
+                                    Toast.LENGTH_LONG);
+                    toast.setGravity(Gravity.CENTER, Gravity.CENTER, 0);
+                    toast.show();
                     mServiceIntent.putExtra("tag", "add");
                     mServiceIntent.putExtra("symbol", input.toString());
                     startService(mServiceIntent);
@@ -158,8 +182,24 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
 
   @Override
   public void onResume() {
+    SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
+    sp.registerOnSharedPreferenceChangeListener(this);
     super.onResume();
     getLoaderManager().restartLoader(CURSOR_LOADER_ID, null, this);
+  }
+
+  @Override
+  public void onPause(){
+    SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this);
+    sp.unregisterOnSharedPreferenceChangeListener(this);
+    super.onPause();
+  }
+
+  @Override
+  public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key){
+    if (key.equals(getString(R.string.pref_server_status_key))){
+      ShowEmptyViewIfAdapterEmpty(mEmptyView);
+    }
   }
 
   public void networkToast(){
@@ -216,11 +256,49 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
   public void onLoadFinished(Loader<Cursor> loader, Cursor data){
     mCursorAdapter.swapCursor(data);
     mCursor = data;
+    ShowEmptyViewIfAdapterEmpty(mEmptyView);
   }
 
   @Override
   public void onLoaderReset(Loader<Cursor> loader){
     mCursorAdapter.swapCursor(null);
   }
+
+  private void     ShowEmptyViewIfAdapterEmpty(TextView emptyView){
+    int message = R.string.blank_string;
+    if (emptyView!= null) {
+      if (mCursorAdapter.getItemCount() == 0) {
+        message = R.string.empty_stock_list;
+        @StockTaskService.ServerStatus int serverStatus = Utils.getServerStatus(mContext);
+        switch(serverStatus){
+          case StockTaskService.STATUS_SERVER_DOWN:
+            message = R.string.empty_stock_list_server_down;
+            break;
+          case StockTaskService.STATUS_SERVER_INVALID:
+            message = R.string.empty_stock_list_server_invalid;
+            break;
+          case StockTaskService.STATUS_SERVER_REMOTE_EXCEPTION:
+            message = R.string.empty_stock_list_remote_exception;
+            break;
+
+          case StockTaskService.STATUS_SERVER_UNKNOWN:
+            message = R.string.empty_stock_list_remote_exception;
+            break;
+          case StockTaskService.STATUS_SERVER_OK:
+
+          default:
+            if (!Utils.isNetworkAvailable( mContext)){
+              message = R.string.empty_stock_list_no_network;
+            }
+        }
+        emptyView.setText(message);
+        emptyView.setVisibility(View.VISIBLE);
+      } else{
+        emptyView.setText(message);
+        emptyView.setVisibility(View.GONE);
+      }
+    }
+  }
+
 
 }
